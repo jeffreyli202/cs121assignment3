@@ -6,7 +6,6 @@ import argparse
 TOKENS = re.compile(r"[A-Za-z0-9]+")
 
 class Stemmer:
-    """Very naive stemmer just to satisfy 'use stemming'."""
     def stem(self, w: str) -> str:
         w = w.lower()
         if len(w) <= 3:
@@ -109,7 +108,7 @@ class Indexer:
             return
         self.partial_count += 1
         fname = os.path.join(self.out_dir, f"partial_{self.partial_count}.jsonl")
-        print(f"[INFO] flush -> {fname}")
+        print(f"flush -> {fname}")
 
         with open(fname, "w", encoding="utf-8") as f:
             for term in sorted(self.index.keys()):
@@ -141,14 +140,14 @@ class Indexer:
     def build(self):
         self.walk_corpus()
         self.write_doc_index()
-        print("[INFO] indexing complete (partials only, no merge).")
+        print("Indexing complete on partials.")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus_root", required=True)
-    ap.add_argument("--index_dir", required=True)
+    ap.add_argument("--data", required=True)
     ap.add_argument("--flush_threshold", type=int, default=500_000)
     args = ap.parse_args()
 
-    idx = Indexer(args.corpus_root, args.index_dir, args.flush_threshold)
+    idx = Indexer(args.corpus_root, args.data, args.flush_threshold)
     idx.build()
