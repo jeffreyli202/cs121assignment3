@@ -86,6 +86,7 @@ class Indexer:
         parser.feed(html)
         imp_text, body_text = parser.get_texts()
 
+        # We store two counts to later rank them when quering, it'll make things easier (words in important will be worth more than words in body)
         tf_imp, tf_other = defaultdict(int), defaultdict(int)
 
         for t in self.tokens(imp_text):
@@ -104,6 +105,7 @@ class Indexer:
         return sum(len(docs) for docs in self.index.values()) >= self.flush_threshold
 
     def flush_partial(self):
+        #Flush to not run out of memory
         if not self.index:
             return
         self.partial_count += 1
