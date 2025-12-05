@@ -139,6 +139,15 @@ class Indexer:
 
         self.flush_partial()
 
+    def open_partial_iter(self, filepath):
+        f = open(filepath, "r", encoding="utf-8")
+        line = f.readline()
+        if not line:
+            f.close()
+            return None
+        obj = json.loads(line)
+        return {"file": f, "term": obj["term"], "postings": obj["postings"]}
+
     def write_doc_index(self):
         doc_path = os.path.join(self.out_dir, "doc_index.jsonl")
         with open(doc_path, 'w', encoding="utf-8") as f:
@@ -162,14 +171,14 @@ class Indexer:
             print("No partial files to merge.")
             return
 
-        final_path = os.path.join(self.out_dir, "final_index.jsonl")
+        final_path = os.path.join(self.out_dir, "merged_index.jsonl")
         lexicon_path = os.path.join(self.out_dir, "lexicon.json")
 
         heap = []
         streams = []
 
         for pf in partial_files:
-            st = self._open_partial_iter(os.path.join(self.out_dir, pf))
+            st = self.open_partial_iter(os.path.join(self.out_dir, pf))
             if st:
                 streams.append(st)
                 heapq.heappush(heap, (st["term"], len(streams) - 1))
