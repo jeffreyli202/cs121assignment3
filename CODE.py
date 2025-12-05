@@ -1,5 +1,6 @@
 import os, json, re
 from collections import defaultdict
+import heapq
 from html.parser import HTMLParser
 import argparse
 
@@ -67,6 +68,11 @@ class Indexer:
         self.flush_threshold = flush_threshold
         self.partial_count = 0
 
+        self.doc_lengths = {}
+
+        self.IMP_WEIGHT = 3.0
+        self.BODY_WEIGHT = 1.0
+
     def tokens(self, text):
         for m in TOKENS.finditer(text.lower()):
             yield self.stemmer.stem(m.group(0))
@@ -86,13 +92,16 @@ class Indexer:
         parser.feed(html)
         imp_text, body_text = parser.get_texts()
 
-        # We store two counts to later rank them when quering, it'll make things easier (words in important will be worth more than words in body)
         tf_imp, tf_other = defaultdict(int), defaultdict(int)
 
         for t in self.tokens(imp_text):
             tf_imp[t] += 1
         for t in self.tokens(body_text):
             tf_other[t] += 1
+
+        imp_count = sum(tf_imp.values())
+        body_count = sum(tf_other.values())
+        self.doc_lengths[doc_id] = self.IMP_WEIGHT * imp_count + self.BODY_WEIGHT * body_count
 
         for term in set(tf_imp.keys()) | set(tf_other.keys()):
             self.index[term][doc_id] = [tf_imp.get(term, 0), tf_other.get(term, 0)]
@@ -105,7 +114,7 @@ class Indexer:
         return sum(len(docs) for docs in self.index.values()) >= self.flush_threshold
 
     def flush_partial(self):
-        #Flush to not run out of memory
+        # Flush to not run out of memory
         if not self.index:
             return
         self.partial_count += 1
@@ -132,17 +141,90 @@ class Indexer:
 
     def write_doc_index(self):
         doc_path = os.path.join(self.out_dir, "doc_index.jsonl")
-        with open(doc_path, "w", encoding="utf-8") as f:
+        with open(doc_path, 'w', encoding="utf-8") as f:
             for i, url in enumerate(self.urls, start=1):
                 f.write(json.dumps({"doc_id": i, "url": url}) + "\n")
+
         meta_path = os.path.join(self.out_dir, "meta.json")
-        with open(meta_path, "w", encoding="utf-8") as f:
+        with open(meta_path, 'w', encoding="utf-8") as f:
             json.dump({"num_docs": self.doc_id}, f)
+
+        stats_path = os.path.join(self.out_dir, "stats.json")
+        with open(stats_path, 'w', encoding="utf-8") as f:
+            json.dump({"doc_lengths": self.doc_lengths}, f)
+
+    def merge_partials(self):
+        partial_files = sorted(
+            f for f in os.listdir(self.out_dir)
+            if f.startswith("partial_") and f.endswith(".jsonl")
+        )
+        if not partial_files:
+            print("No partial files to merge.")
+            return
+
+        final_path = os.path.join(self.out_dir, "final_index.jsonl")
+        lexicon_path = os.path.join(self.out_dir, "lexicon.json")
+
+        heap = []
+        streams = []
+
+        for pf in partial_files:
+            st = self._open_partial_iter(os.path.join(self.out_dir, pf))
+            if st:
+                streams.append(st)
+                heapq.heappush(heap, (st["term"], len(streams) - 1))
+
+        lexicon = {}
+
+        with open(final_path, "w", encoding="utf-8") as out:
+            while heap:
+                term, idx = heapq.heappop(heap)
+
+                same = [idx]
+                while heap and heap[0][0] == term:
+                    _, idx2 = heapq.heappop(heap)
+                    same.append(idx2)
+
+                merged = defaultdict(lambda: [0, 0])
+
+                for si in same:
+                    postings = streams[si]["postings"]
+                    for doc_id, tf_imp, tf_body in postings:
+                        doc_id = int(doc_id)
+                        merged[doc_id][0] += int(tf_imp)
+                        merged[doc_id][1] += int(tf_body)
+
+                merged_postings = [
+                    [doc_id, vals[0], vals[1]]
+                    for doc_id, vals in sorted(merged.items())
+                ]
+
+                offset = out.tell()
+                out.write(json.dumps({"term": term, "postings": merged_postings}) + "\n")
+                lexicon[term] = {"offset": offset, "df": len(merged_postings)}
+
+                for si in same:
+                    f = streams[si]["file"]
+                    line = f.readline()
+                    if line:
+                        obj = json.loads(line)
+                        streams[si]["term"] = obj["term"]
+                        streams[si]["postings"] = obj["postings"]
+                        heapq.heappush(heap, (streams[si]["term"], si))
+                    else:
+                        f.close()
+
+        with open(lexicon_path, "w", encoding="utf-8") as f:
+            json.dump(lexicon, f)
+
+        print(f"Merged -> {final_path}")
+        print(f"Lexicon -> {lexicon_path}")
 
     def build(self):
         self.walk_corpus()
         self.write_doc_index()
-        print("Indexing complete on partials.")
+        self.merge_partials()
+        print("Indexing and merging complete")
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
