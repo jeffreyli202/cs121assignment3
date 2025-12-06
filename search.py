@@ -229,10 +229,10 @@ class Searcher:
                 if tf > 0:
                     scores[doc_id] += tf * idf
 
-                for doc_id in list(scores.keys()):
-                    dl = self.doc_lengths.get(doc_id)
-                    if dl and dl > 0:
-                        scores[doc_id] /= math.sqrt(dl)
+        for doc_id in list(scores.keys()):
+            dl = self.doc_lengths.get(doc_id)
+            if dl and dl > 0:
+                scores[doc_id] /= math.sqrt(dl)
 
         self.coverage_heuristic(scores, term_postings, unique_terms)
         self.major_heuristic(scores, unique_terms)
