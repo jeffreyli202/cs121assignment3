@@ -75,12 +75,18 @@ class Indexer:
         html = obj.get("content", "")
         url = obj.get("url", "")
 
+        if isinstance(html, str):
+            s = html.strip()
+
+            if s.startswith("http://") or s.startswith("https://"):
+                return
+
         low_html = html.lower()
 
         if ("the requested url was not found on this server" in low_html or "<title>not found</title>" in low_html):
             return
 
-        #Missing or almost no content
+        #MISSING OR NOT CONTENT
         if not html or len(html.strip()) < 50:
             return
         
