@@ -103,6 +103,7 @@ class Searcher:
     
     def major_heuristic(self, scores, query_terms):
         qset = set(query_terms)
+        date_pat = re.compile(r"/20\d{2}/\d{2}/")
 
         for doc_id in list(scores.keys()):
             url = self.doc_index.get(doc_id, "")
@@ -116,11 +117,18 @@ class Searcher:
             if "/~" in u:
                 mult *= 0.85
 
+            if date_pat.search(u):
+                mult *= 0.80
+
             if "major" in qset or "requirements" in qset or "degree" in qset:
-                if "/ugrad/" in u or "undergrad" in u:
-                    mult *= 1.20
+                if ("/ugrad/" in u or "undergrad" in u or
+                    "degree" in u or "degrees" in u or
+                    "program" in u or "requirements" in u or
+                    "curriculum" in u):
+                    mult *= 1.25
+
                 if "change_of_major" in u:
-                    mult *= 0.80
+                    mult *= 0.75
 
             scores[doc_id] *= mult
         
