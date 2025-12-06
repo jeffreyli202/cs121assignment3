@@ -3,6 +3,7 @@ from collections import defaultdict
 import heapq
 from html.parser import HTMLParser
 import argparse
+import hashlib
 
 TOKENS = re.compile(r"[A-Za-z0-9]+")
 
@@ -69,9 +70,12 @@ class Indexer:
         self.partial_count = 0
 
         self.doc_lengths = {}
+        self.simhash_buckets = defaultdict(list)
 
         self.IMP_WEIGHT = 3.0
         self.BODY_WEIGHT = 1.0
+        self.SIMHASH_BITS = 64
+        self.THRESHHOLD = 3
 
     def tokens(self, text):
         for m in TOKENS.finditer(text.lower()):
@@ -84,10 +88,6 @@ class Indexer:
         html = obj.get("content", "")
         url = obj.get("url", "")
 
-        self.doc_id += 1
-        doc_id = self.doc_id
-        self.urls.append(url)
-
         parser = HTML()
         parser.feed(html)
         imp_text, body_text = parser.get_texts()
@@ -98,6 +98,17 @@ class Indexer:
             tf_imp[t] += 1
         for t in self.tokens(body_text):
             tf_other[t] += 1
+
+        #FOR PERFECT AND NEAR DUPLICATES
+        sh = self.simhash(tf_imp, tf_other)
+        if self.is_near_duplicate(sh):
+            return
+
+        self.doc_id += 1
+        doc_id = self.doc_id
+        self.urls.append(url)
+
+        self.remember_simhash(sh, doc_id)
 
         imp_count = sum(tf_imp.values())
         body_count = sum(tf_other.values())
@@ -139,13 +150,60 @@ class Indexer:
 
         self.flush_partial()
 
+    def simhash(self, tf_imp, tf_other):
+        weights = defaultdict(int)
+
+        for t, c in tf_imp.items():
+            weights[t] += 3 * c
+
+        for t, c in tf_other.items():
+            weights[t] += 1 * c
+
+        v = [0] * self.SIMHASH_BITS
+
+        for term, w in weights.items():
+
+            h = int(hashlib.md5(term.encode("utf-8")).hexdigest(), 16)
+            
+            for i in range(self.SIMHASH_BITS):
+                bit = (h >> i) & 1
+                v[i] += w if bit else -w
+
+        out = 0
+        for i in range(self.SIMHASH_BITS):
+            if v[i] > 0:
+                out |= (1 << i)
+        return out
+
+    def hamming(self, a, b):
+        return (a ^ b).bit_count()
+
+    def simhash_bucket_key(self, sh):
+        return sh >> (self.SIMHASH_BITS - 16)
+
+    def is_near_duplicate(self, sh):
+        key = self.simhash_bucket_key(sh)
+
+        for prev_sh, _prev_doc in self.simhash_buckets[key]:
+            if self.hamming(sh, prev_sh) <= self.NEAR_HAMMING_THRESH:
+                return True
+            
+        return False
+
+    def remember_simhash(self, sh, doc_id):
+        key = self.simhash_bucket_key(sh)
+        self.simhash_buckets[key].append((sh, doc_id))
+
     def open_partial_iter(self, filepath):
         f = open(filepath, "r", encoding="utf-8")
         line = f.readline()
+
         if not line:
             f.close()
             return None
+        
         obj = json.loads(line)
+
         return {"file": f, "term": obj["term"], "postings": obj["postings"]}
 
     def write_doc_index(self):
