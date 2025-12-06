@@ -235,7 +235,9 @@ class Searcher:
                 scores[doc_id] /= math.sqrt(dl)
 
         for doc_id in list(scores.keys()):
-            if self.doc_lengths.get(doc_id, 0) < 10:
+            url = self.doc_index.get(doc_id, "").lower()
+    
+            if "not_found" in url:
                 del scores[doc_id]
 
         self.coverage_heuristic(scores, term_postings, unique_terms)
