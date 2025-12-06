@@ -76,6 +76,11 @@ class Indexer:
         html = obj.get("content", "")
         url = obj.get("url", "")
 
+        u = (url or "").lower()
+
+        if "404" in u or "notfound" in u:
+            return
+
         if not isinstance(html, str):
             return
 
@@ -104,6 +109,19 @@ class Indexer:
         combined = (imp_text + " " + body_text).strip()
 
         combined_low = combined.lower()
+
+        ics_404_phrases = [
+            "whoops! we are having trouble locating your page",
+            "we are having trouble locating your page",
+            "if you're lost or have reached this page in error",
+            "if you’re lost or have reached this page in error",
+            "search ics",
+        ]
+
+        
+        for p in ics_404_phrases:
+            if p in combined_low:
+                return
 
         if ("the requested url was not found on this server" in combined_low or combined_low.startswith("not found") and "apache" in combined_low):
             return
