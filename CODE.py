@@ -76,11 +76,12 @@ class Indexer:
         html = obj.get("content", "")
         url = obj.get("url", "")
 
-        if isinstance(html, str):
-            s = html.strip()
+        if not isinstance(html, str):
+            return
 
-            if s.startswith("http://") or s.startswith("https://"):
-                return
+        s = html.strip()
+        if s.startswith("http://") or s.startswith("https://"):
+            return
 
         low_html = html.lower()
 
