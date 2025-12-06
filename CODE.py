@@ -1,9 +1,9 @@
 import os, json, re
 from collections import defaultdict
 import heapq
-from html.parser import HTMLParser
 import argparse
 import hashlib
+from bs4 import BeautifulSoup
 
 TOKENS = re.compile(r"[A-Za-z0-9]+")
 
@@ -26,35 +26,22 @@ class Stemmer:
             return w[:-1]
         return w
 
-class HTML(HTMLParser):
+def extract_texts_bs4(html):
+    soup = BeautifulSoup(html, "html.parser")
 
-    TAGS = {"title", "h1", "h2", "h3", "b", "strong"}
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
 
-    def __init__(self):
-        super().__init__()
-        self.in_important = 0
-        self.imp_chunks = []
-        self.body_chunks = []
+    important_chunks = []
 
-    def handle_starttag(self, tag, attrs):
-        if tag.lower() in self.TAGS:
-            self.in_important += 1
+    for tag in soup.find_all(["title", "h1", "h2", "h3", "b", "strong"]):
+        txt = tag.get_text(" ", strip=True)
+        if txt:
+            important_chunks.append(txt)
 
-    def handle_endtag(self, tag):
-        if tag.lower() in self.TAGS and self.in_important > 0:
-            self.in_important -= 1
+    body_text = soup.get_text(" ", strip=True)
 
-    def handle_data(self, data):
-        text = data.strip()
-        if not text:
-            return
-        self.body_chunks.append(text)
-        if self.in_important:
-            self.imp_chunks.append(text)
-
-    def get_texts(self):
-        return " ".join(self.imp_chunks), " ".join(self.body_chunks)
-
+    return " ".join(important_chunks), body_text
 
 class Indexer:
     def __init__(self, corpus_root, out_dir, flush_threshold=200_000):
@@ -101,18 +88,15 @@ class Indexer:
         if low.startswith("{") or low.startswith("["):
             return
 
-        parser = HTML()
         try:
-            parser.feed(html)
+            imp_text, body_text = extract_texts_bs4(html)
         except Exception:
             return
-        
-        imp_text, body_text = parser.get_texts()
 
         combined = (imp_text + " " + body_text).strip()
 
         combined_low = combined.lower()
-        
+
         if ("the requested url was not found on this server" in combined_low or combined_low.startswith("not found") and "apache" in combined_low):
             return
 
