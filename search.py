@@ -4,6 +4,7 @@ import re
 import math
 import argparse
 from collections import defaultdict
+from urllib.parse import urlparse
 
 TOKENS = re.compile(r"[A-Za-z0-9]+")
 
@@ -138,6 +139,30 @@ class Searcher:
             coverage = matched / qn
             scores[doc_id] *= (1.0 + 0.40 * coverage)
 
+    def host_tokens(self, url):
+        try:
+            host = urlparse(url).netloc.lower()
+        except Exception:
+            host = ""
+        parts = re.findall(r"[A-Za-z0-9]+", host)
+        return set(self.stemmer.stem(p) for p in parts if p)
+    
+    def host_match_heuristic(self, scores, query_terms):
+        qset = set(query_terms)
+        if not qset:
+            return
+
+        for doc_id in list(scores.keys()):
+            url = self.doc_index.get(doc_id, "")
+            if not url:
+                continue
+
+            ht = self.host_tokens(url)
+            overlap = len(qset & ht)
+
+            if overlap > 0:
+                scores[doc_id] *= (1.0 + 0.15 * overlap)
+
     def get_postings_for_term(self, term):
         info = self.lexicon.get(term)
 
@@ -208,6 +233,7 @@ class Searcher:
 
         self.coverage_heuristic(scores, term_postings, unique_terms)
         self.major_heuristic(scores, unique_terms)
+        self.host_match_heuristic(scores, unique_terms)
 
         ranked = sorted(
             ((score, doc_id) for doc_id, score in scores.items()),
