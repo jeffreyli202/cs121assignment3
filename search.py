@@ -100,26 +100,20 @@ class Searcher:
         parts = re.findall(r"[A-Za-z0-9]+", url.lower())
         return set(self.stemmer.stem(p) for p in parts if p)
     
-    def coverage_heuristic(self, scores, query_terms):
-        if not scores:
-            return
-
-        qset = set(query_terms)
-
-        if not qset:
+    def coverage_heuristic(self, scores, term_postings, query_terms):
+        qn = len(query_terms)
+        if qn == 0:
             return
 
         for doc_id in list(scores.keys()):
-            url = self.doc_index.get(doc_id, "")
-            if not url:
-                continue
+            matched = 0
+            for t in query_terms:
+                p = term_postings.get(t)
+                if p and doc_id in p:
+                    matched += 1
 
-            u_tokens = self.url_tokens(url)
-            overlap = len(qset & u_tokens)
-
-            coverage = overlap / max(1, len(qset))
-
-            scores[doc_id] *= (1.0 + 0.20 * coverage)
+            coverage = matched / qn
+            scores[doc_id] *= (1.0 + 0.30 * coverage)
 
     def get_postings_for_term(self, term):
         info = self.lexicon.get(term)
@@ -189,7 +183,7 @@ class Searcher:
             if dl and dl > 0:
                 scores[doc_id] /= math.sqrt(dl)
 
-        self.coverage_heuristic(scores, unique_terms)
+        self.coverage_heuristic(scores, term_postings, unique_terms)
 
         ranked = sorted(
             ((score, doc_id) for doc_id, score in scores.items()),
