@@ -88,6 +88,11 @@ class Indexer:
         html = obj.get("content", "")
         url = obj.get("url", "")
 
+        low_html = html.lower()
+
+        if ("the requested url was not found on this server" in low_html or "<title>not found</title>" in low_html):
+            return
+
         #Missing or almost no content
         if not html or len(html.strip()) < 50:
             return
@@ -105,6 +110,11 @@ class Indexer:
         imp_text, body_text = parser.get_texts()
 
         combined = (imp_text + " " + body_text).strip()
+
+        combined_low = combined.lower()
+        
+        if ("the requested url was not found on this server" in combined_low or combined_low.startswith("not found") and "apache" in combined_low):
+            return
 
         if len(combined) < 50:
             return
@@ -133,7 +143,12 @@ class Indexer:
 
         imp_count = sum(tf_imp.values())
         body_count = sum(tf_other.values())
-        self.doc_lengths[doc_id] = self.IMP_WEIGHT * imp_count + self.BODY_WEIGHT * body_count
+        raw_len_score = self.IMP_WEIGHT * imp_count + self.BODY_WEIGHT * body_count
+
+        if raw_len_score < 10:
+            return
+        
+        self.doc_lengths[doc_id] = raw_len_score
 
         for term in set(tf_imp.keys()) | set(tf_other.keys()):
             self.index[term][doc_id] = [tf_imp.get(term, 0), tf_other.get(term, 0)]
