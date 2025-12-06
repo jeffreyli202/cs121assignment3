@@ -96,6 +96,31 @@ class Searcher:
         for m in TOKENS.finditer(text.lower()):
             yield self.stemmer.stem(m.group(0))
 
+    def url_tokens(self, url):
+        parts = re.findall(r"[A-Za-z0-9]+", url.lower())
+        return set(self.stemmer.stem(p) for p in parts if p)
+    
+    def coverage_heuristic(self, scores, query_terms):
+        if not scores:
+            return
+
+        qset = set(query_terms)
+
+        if not qset:
+            return
+
+        for doc_id in list(scores.keys()):
+            url = self.doc_index.get(doc_id, "")
+            if not url:
+                continue
+
+            u_tokens = self.url_tokens(url)
+            overlap = len(qset & u_tokens)
+
+            coverage = overlap / max(1, len(qset))
+
+            scores[doc_id] *= (1.0 + 0.20 * coverage)
+
     def get_postings_for_term(self, term):
         info = self.lexicon.get(term)
 
@@ -134,9 +159,8 @@ class Searcher:
         term_postings = {}
         for t in unique_terms:
             p = self.get_postings_for_term(t)
-            if not p:
-                return []
-            term_postings[t] = p
+            if p:
+                term_postings[t] = p
         
         if not term_postings:
             return []
@@ -164,6 +188,8 @@ class Searcher:
             dl = self.doc_lengths.get(doc_id)
             if dl and dl > 0:
                 scores[doc_id] /= math.sqrt(dl)
+
+        self.coverage_heuristic(scores, unique_terms)
 
         ranked = sorted(
             ((score, doc_id) for doc_id, score in scores.items()),
