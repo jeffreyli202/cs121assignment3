@@ -88,9 +88,26 @@ class Indexer:
         html = obj.get("content", "")
         url = obj.get("url", "")
 
+        #Missing or almost no content
+        if not html or len(html.strip()) < 50:
+            return
+        
+        low = html.lstrip().lower()
+        if low.startswith("{") or low.startswith("["):
+            return
+
         parser = HTML()
-        parser.feed(html)
+        try:
+            parser.feed(html)
+        except Exception:
+            return
+        
         imp_text, body_text = parser.get_texts()
+
+        combined = (imp_text + " " + body_text).strip()
+
+        if len(combined) < 50:
+            return
 
         tf_imp, tf_other = defaultdict(int), defaultdict(int)
 
@@ -98,6 +115,10 @@ class Indexer:
             tf_imp[t] += 1
         for t in self.tokens(body_text):
             tf_other[t] += 1
+
+        #Too little tokens
+        if sum(tf_imp.values()) + sum(tf_other.values()) < 5:
+            return
 
         #FOR PERFECT AND NEAR DUPLICATES
         sh = self.simhash(tf_imp, tf_other)
@@ -164,7 +185,7 @@ class Indexer:
         for term, w in weights.items():
 
             h = int(hashlib.md5(term.encode("utf-8")).hexdigest(), 16)
-            
+
             for i in range(self.SIMHASH_BITS):
                 bit = (h >> i) & 1
                 v[i] += w if bit else -w
@@ -185,7 +206,7 @@ class Indexer:
         key = self.simhash_bucket_key(sh)
 
         for prev_sh, _prev_doc in self.simhash_buckets[key]:
-            if self.hamming(sh, prev_sh) <= self.NEAR_HAMMING_THRESH:
+            if self.hamming(sh, prev_sh) <= self.THRESHHOLD:
                 return True
             
         return False

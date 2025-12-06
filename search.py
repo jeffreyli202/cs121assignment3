@@ -5,6 +5,8 @@ import math
 import argparse
 from collections import defaultdict
 from urllib.parse import urlparse
+import hashlib
+import time
 
 TOKENS = re.compile(r"[A-Za-z0-9]+")
 
@@ -215,10 +217,6 @@ class Searcher:
         if not term_postings:
             return []
 
-        candidate_docs = set()
-        for p in term_postings.values():
-            candidate_docs |= set(p.keys())
-
         scores = defaultdict(float)
         N = self.num_docs
 
@@ -226,18 +224,15 @@ class Searcher:
             df = len(p)
             idf = math.log((N + 1.0) / (df + 1.0)) + 1.0
 
-            for doc_id in candidate_docs:
-                if doc_id not in p:
-                    continue
-                tf_imp, tf_body = p[doc_id]
+            for doc_id, (tf_imp, tf_body) in p.items():
                 tf = self.IMP_WEIGHT * tf_imp + self.BODY_WEIGHT * tf_body
                 if tf > 0:
                     scores[doc_id] += tf * idf
 
-        for doc_id in list(scores.keys()):
-            dl = self.doc_lengths.get(doc_id)
-            if dl and dl > 0:
-                scores[doc_id] /= math.sqrt(dl)
+                for doc_id in list(scores.keys()):
+                    dl = self.doc_lengths.get(doc_id)
+                    if dl and dl > 0:
+                        scores[doc_id] /= math.sqrt(dl)
 
         self.coverage_heuristic(scores, term_postings, unique_terms)
         self.major_heuristic(scores, unique_terms)
@@ -279,7 +274,11 @@ def main():
         if not q:
             break
 
+        start = time.perf_counter()
         searcher.print_results(q, top_k=args.topk)
+        end = time.perf_counter()
+
+        print(f"Time: {(end - start) * 1000:.2f} ms")
 
 
 if __name__ == "__main__":
