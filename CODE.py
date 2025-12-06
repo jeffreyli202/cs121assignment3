@@ -63,6 +63,7 @@ class Indexer:
         self.BODY_WEIGHT = 1.0
         self.SIMHASH_BITS = 64
         self.THRESHHOLD = 3
+        self.postings_counter = 0
 
     def tokens(self, text):
         for m in TOKENS.finditer(text.lower()):
@@ -125,12 +126,6 @@ class Indexer:
         if self.is_near_duplicate(sh):
             return
 
-        self.doc_id += 1
-        doc_id = self.doc_id
-        self.urls.append(url)
-
-        self.remember_simhash(sh, doc_id)
-
         imp_count = sum(tf_imp.values())
         body_count = sum(tf_other.values())
         raw_len_score = self.IMP_WEIGHT * imp_count + self.BODY_WEIGHT * body_count
@@ -138,17 +133,23 @@ class Indexer:
         if raw_len_score < 10:
             return
         
+        self.doc_id += 1
+        doc_id = self.doc_id
+        self.urls.append(url)
+        
         self.doc_lengths[doc_id] = raw_len_score
+        self.remember_simhash(sh, doc_id)
 
         for term in set(tf_imp.keys()) | set(tf_other.keys()):
+            if doc_id not in self.index[term]:
+                self.postings_counter += 1
             self.index[term][doc_id] = [tf_imp.get(term, 0), tf_other.get(term, 0)]
 
         if self._need_flush():
             self.flush_partial()
 
     def _need_flush(self):
-
-        return sum(len(docs) for docs in self.index.values()) >= self.flush_threshold
+        return self.postings_counter >= self.flush_threshold
 
     def flush_partial(self):
         # Flush to not run out of memory
@@ -167,6 +168,7 @@ class Indexer:
                 f.write(json.dumps({"term": term, "postings": postings}) + "\n")
 
         self.index.clear()
+        self.postings_counter = 0
 
     def walk_corpus(self):
         for root, _, files in os.walk(self.corpus_root):
