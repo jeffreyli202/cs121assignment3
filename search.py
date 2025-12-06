@@ -100,20 +100,28 @@ class Searcher:
         parts = re.findall(r"[A-Za-z0-9]+", url.lower())
         return set(self.stemmer.stem(p) for p in parts if p)
     
-    def coverage_heuristic(self, scores, term_postings, query_terms):
-        qn = len(query_terms)
-        if qn == 0:
-            return
+    def coverage_heuristic(self, scores, query_terms):
+        qset = set(query_terms)
 
         for doc_id in list(scores.keys()):
-            matched = 0
-            for t in query_terms:
-                p = term_postings.get(t)
-                if p and doc_id in p:
-                    matched += 1
+            url = self.doc_index.get(doc_id, "")
+            u = url.lower()
 
-            coverage = matched / qn
-            scores[doc_id] *= (1.0 + 0.30 * coverage)
+            mult = 1.0
+
+            if "/category/" in u or "/tag/" in u or "/author/" in u:
+                mult *= 0.60
+
+            if "/~" in u:
+                mult *= 0.85
+
+            if "major" in qset or "requirements" in qset or "degree" in qset:
+                if "/ugrad/" in u or "undergrad" in u:
+                    mult *= 1.20
+                if "change_of_major" in u:
+                    mult *= 0.80
+
+            scores[doc_id] *= mult
 
     def get_postings_for_term(self, term):
         info = self.lexicon.get(term)
@@ -183,7 +191,7 @@ class Searcher:
             if dl and dl > 0:
                 scores[doc_id] /= math.sqrt(dl)
 
-        self.coverage_heuristic(scores, term_postings, unique_terms)
+        self.coverage_heuristic(scores, unique_terms)
 
         ranked = sorted(
             ((score, doc_id) for doc_id, score in scores.items()),
